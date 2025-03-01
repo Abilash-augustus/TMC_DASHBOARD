@@ -1,0 +1,11 @@
+{
+  "base_url": "https://api.us-west.cloud.talend.com/tmc/v2.6",
+  "engines": {
+    "REMOTE_ENGINE_CLUSTER": "60648f88dd425803e84ad87b",
+    "REMOTE_ENGINE": "606adda8f104ab77c2ecb751"
+  },
+  "recent_tokens": [
+    "5p38e...2EraX"
+  ],
+  "recent_workspaces": []
+}
