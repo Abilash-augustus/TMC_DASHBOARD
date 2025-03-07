@@ -2,6 +2,8 @@
 
 import requests
 from typing import Dict, List, Any, Optional, Union
+import streamlit as st
+
 
 
 class TMCAPIClient:
@@ -263,12 +265,14 @@ class TMCAPIClient:
         return {
             'artifact': {
                 'id': task_details['artifact']['id'],
+                'name': task_details['artifact']['name'],
                 'version': task_details['artifact']['version']
             },
             'connections': task_details.get('connections', {}),
             'name': task_details['name'],
             'parameters': task_details.get('parameters', {}),
-            'workspaceId': task_details['workspace']['id']
+            'workspaceId': task_details['workspace']['id'],
+            'environmentId': task_details['workspace']['environment']['id']
         }
     
     def pause_or_resume_task(self, task_id: str, pause: bool, pause_context: str) -> bool:
@@ -614,3 +618,154 @@ class TMCAPIClient:
         except requests.exceptions.RequestException as e:
             print(f"Failed to download logs: {e}")
             return None
+    # Other methods...
+
+
+    def update_task_ui(self, task_id):
+        """
+        Generates a dynamic UI form for updating task information and handles the update logic.
+        """
+        task_update_info = self.get_task_update_info(task_id)
+        if not task_update_info:
+            return False, "Failed to fetch task update information."
+
+        st.write("**Current Task Configuration:**")
+        st.json(task_update_info)
+
+        # Extract connections from the task
+        connections = task_update_info.get('connections', {})
+        if not connections:
+            st.warning("No connections found in the task.")
+            return False, "No connections found in the task."
+
+        # Fetch details for the first connection to determine filter criteria
+        first_connection_id = next(iter(connections.values()), None)
+        if not first_connection_id:
+            st.warning("No valid connection IDs found in the task.")
+            return False, "No valid connection IDs found in the task."
+
+        # Fetch connection details for the first connection
+        first_connection_details = self.get_connection_details(first_connection_id)
+        if not first_connection_details:
+            st.warning(f"Failed to fetch details for connection ID: {first_connection_id}")
+            return False, f"Failed to fetch details for connection ID: {first_connection_id}"
+
+        # Extract filter criteria from the first connection
+        current_app = first_connection_details.get('app', '')
+        current_workspace_id = first_connection_details.get('workspace', {}).get('id', '')
+        current_environment_id = first_connection_details.get('workspace', {}).get('environment', {}).get('id', '')
+
+        # Fetch all connections
+        try:
+            all_connections = self.get_all_connections()
+        except Exception as e:
+            return False, f"Failed to fetch connections: {str(e)}"
+
+        # Filter connections based on the criteria
+        filtered_connections = [
+            conn for conn in all_connections
+            if conn.get('app') == current_app
+            and conn.get('workspace', {}).get('id') == current_workspace_id
+            and conn.get('workspace', {}).get('environment', {}).get('id') == current_environment_id
+        ]
+
+        # Create a form for updating task information
+        with st.form("update_task_form"):
+            st.write("**Update Task Information:**")
+
+            # Section 1: Artifact (id and version)
+            st.subheader("Artifact")
+            artifact_id = st.text_input("Artifact ID", value=task_update_info.get('artifact', {}).get('id', ''))
+            artifact_version = st.text_input("Artifact Version", value=task_update_info.get('artifact', {}).get('version', ''))
+
+            # Section 2: Connections (dynamic key-value pairs)
+            st.subheader("Connections")
+            updated_connections = {}
+
+            # Display a dropdown for each connection in the task
+            for connection_name, connection_id in connections.items():
+                # Fetch details for the current connection
+                connection_details = self.get_connection_details(connection_id)
+                current_connection_name = connection_details.get('name', 'Unknown Connection') if connection_details else "Unknown Connection"
+
+                # Create a dropdown for selecting a new connection
+                connection_options = {conn["id"]: conn["name"] for conn in filtered_connections}
+                selected_connection_id = st.selectbox(
+                    f"Connection: {connection_name} (Current: {current_connection_name})",
+                    options=list(connection_options.keys()),
+                    format_func=lambda x: connection_options[x],
+                    index=list(connection_options.keys()).index(connection_id) if connection_id in connection_options else 0
+                )
+                updated_connections[connection_name] = selected_connection_id
+
+            # Section 3: Name
+            st.subheader("Name")
+            name = st.text_input("Task Name", value=task_update_info.get('name', ''))
+
+            # Section 4: Parameters (dynamic key-value pairs)
+            st.subheader("Parameters")
+            parameters = task_update_info.get('parameters', {})
+            updated_parameters = {}
+            for key, value in parameters.items():
+                updated_value = st.text_input(f"Parameter: {key}", value=value)
+                updated_parameters[key] = updated_value
+
+            # Section 5: Workspace ID
+            st.subheader("Workspace")
+            workspace_id = st.text_input("Workspace ID", value=task_update_info.get('workspaceId', ''))
+
+            # Submit button for the form
+            submitted = st.form_submit_button("Update Task")
+            if submitted:
+                # Construct the updated task information
+                updated_task_info = {
+                    "artifact": {
+                        "id": artifact_id,
+                        "version": artifact_version
+                    },
+                    "connections": updated_connections,
+                    "name": name,
+                    "parameters": updated_parameters,
+                    "workspaceId": workspace_id
+                }
+
+                # Call the update function
+                updated_task = self.update_task(task_id, updated_task_info)
+                if updated_task:
+                    return True, "Task updated successfully!"
+                else:
+                    return False, "Failed to update task."
+
+        return False, None  # No submission yet
+
+    
+    def get_all_connections(self):
+        """
+        Fetches all connections from the /connections endpoint using pagination.
+        """
+        connections = []
+        limit = 100  # Maximum number of items per request
+        offset = 0
+        total = None
+
+        while True:
+            # Construct the request URL
+            url = f"{self.base_url}/connections?limit={limit}&offset={offset}"
+            response = requests.get(url, headers=self.get_headers())
+            
+            if response.status_code != 200:
+                raise Exception(f"Failed to fetch connections: {response.status_code} - {response.text}")
+
+            data = response.json()
+            connections.extend(data.get("items", []))
+
+            # Update the total number of connections
+            if total is None:
+                total = data.get("total", 0)
+
+            # Check if all connections have been fetched
+            offset += limit
+            if offset >= total:
+                break
+
+        return connections

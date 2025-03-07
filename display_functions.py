@@ -7,7 +7,7 @@ from tmc_api_client import TMCAPIClient
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 import time
 
-@st.cache_data
+
 def display_task_details(task_details):
    # Task Details Header
     st.markdown(f"## 🛠️ Task: **{task_details.get('name', 'N/A')}**")
@@ -82,7 +82,7 @@ def display_task_details(task_details):
         else:
             st.write("No auto upgrade info available.")
 
-@st.cache_data
+
 def display_plan_details(plan_details):
     # Plan Details Header
     st.markdown(f"## 📋 Plan: **{plan_details.get('name', 'N/A')}**")
@@ -140,7 +140,6 @@ def display_plan_details(plan_details):
         st.write(f"**Status:** `{status}`")
 
 # Function to display tasks and allow row selection
-@st.cache_data
 def display_tasks(tasks):
     if not tasks:
         st.warning("No tasks found.")
@@ -186,7 +185,6 @@ def display_tasks(tasks):
 
 
 # Function to display plans and allow row selection
-@st.cache_data
 def display_plans(plans):
     if not plans:
         st.warning("No plans found.")
@@ -389,27 +387,13 @@ def display_task_operations(task_id: str, task_name: str):
                 st.error("Failed to update task state.")
     
     elif operation == "Update Task":
-        task_update_info = st.session_state.client.get_task_update_info(task_id)
-        if task_update_info:
-            st.write("**Current Task Configuration:**")
-            st.json(task_update_info)
-            
-            # Allow user to update task parameters
-            new_parameters = st.text_area("Update Parameters (JSON)", value=json.dumps(task_update_info['parameters'], indent=2))
-            if st.button("Update Task"):
-                try:
-                    updated_parameters = json.loads(new_parameters)
-                    task_update_info['parameters'] = updated_parameters
-                    updated_task = st.session_state.client.update_task(task_id, task_update_info)
-                    if updated_task:
-                        st.success("Task updated successfully!")
-                    else:
-                        st.error("Failed to update task.")
-                except json.JSONDecodeError:
-                    st.error("Invalid JSON input.")
-        else:
-            st.warning("Failed to fetch task update information.")
-    
+        success, message = st.session_state.client.update_task_ui(task_id)
+        if message:
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
+                
     elif operation == "Delete Task":
         terminate_executions = st.checkbox("Terminate Running Executions", value=True)
         if st.button("Delete Task"):
